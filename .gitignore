@@ -6,3 +6,11 @@ dist
 # Ignore the output video from Git but not videos you import into src/.
 out
 whisper.cpp
+
+# Danna's own footage and anything derived from it. Her instruction, and it
+# holds for the proxy too: a downscaled cut of a private recording is still the
+# private recording. The word timings are text she already ships in the app and
+# are safe to track.
+public/mantra/*.mp4
+public/mantra/*.mov
+public/mantra/*.wav
