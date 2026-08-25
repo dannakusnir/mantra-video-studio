@@ -24,10 +24,25 @@ import LIBRARY_JSON from "../../public/sfx/library.json";
 
 export type SfxLevel = "none" | "subtle" | "expressive";
 
+/**
+ * The placement names this file actually cues (a subset of the values in
+ * `recommendedPlacement` across public/sfx/library.json — "purposefulCut" is
+ * in the library but nothing here ever calls `pick("purposefulCut", ...)`,
+ * so it is not a toggle: a toggle for a placement that never fires would be
+ * a control that does nothing, the exact failure this file's callers exist
+ * to rule out elsewhere).
+ */
+export const SFX_PLACEMENT_KEYS = ["hook", "reveal", "keywordEmphasis", "ending", "cta"] as const;
+export type SfxPlacementKey = (typeof SFX_PLACEMENT_KEYS)[number];
+export type SfxToggles = Partial<Record<SfxPlacementKey, boolean>>;
+
 export type SfxCue = {
   id: string;
   atSec: number;
   volume: number;
+  /** Which placement this cue was planned under. Read by the toggle filter
+   * below; not otherwise consumed by Reel.tsx. */
+  placement: SfxPlacementKey;
 };
 
 export type SfxLibraryEntry = {
@@ -63,8 +78,8 @@ function pick(placement: string, index: number): SfxLibraryEntry {
   return matches[index % matches.length];
 }
 
-function cue(entry: SfxLibraryEntry, atSec: number, gain: number): SfxCue {
-  return { id: entry.id, atSec: Math.max(0, atSec), volume: entry.defaultVolume * gain };
+function cue(entry: SfxLibraryEntry, atSec: number, gain: number, placement: SfxPlacementKey): SfxCue {
+  return { id: entry.id, atSec: Math.max(0, atSec), volume: entry.defaultVolume * gain, placement };
 }
 
 /** The because-text pace.ts writes for a punch that opens a new thought,
@@ -86,7 +101,15 @@ export function planSfx(
   cards: Card[],
   punches: PunchIn[],
   hookAtSec: number,
-  outputSec: number
+  outputSec: number,
+  /**
+   * Filters the PLANNED cues below by placement — it does not change which
+   * moments get picked. Default {} (every key absent) means every placement
+   * is on, so an omitted `sfxToggles` renders identically to today. "none"
+   * already returned [] above, before this is ever read, so `sfx: "none"`
+   * stays a literal empty list regardless of what these say.
+   */
+  toggles: SfxToggles = {}
 ): SfxCue[] {
   if (level === "none" || cards.length === 0) return [];
 
@@ -98,7 +121,7 @@ export function planSfx(
   let emphasisIdx = 0;
 
   // THE HOOK — the claim she opens on. First cue, if there's a hook at all.
-  cues.push(cue(pick("hook", 0), hookAtSec, 0.8));
+  cues.push(cue(pick("hook", 0), hookAtSec, 0.8, "hook"));
   const hookCard = cardIndexAt(hookAtSec);
   if (hookCard >= 0) used.add(hookCard);
 
@@ -109,23 +132,27 @@ export function planSfx(
     const idx = cardIndexAt(p.atSec);
     if (idx >= 0 && used.has(idx)) continue;
     if (REVEAL_PUNCH.test(p.because)) {
-      cues.push(cue(pick("reveal", revealIdx++), p.atSec, 0.75));
+      cues.push(cue(pick("reveal", revealIdx++), p.atSec, 0.75, "reveal"));
     } else {
-      cues.push(cue(pick("keywordEmphasis", emphasisIdx++), p.atSec, 0.65));
+      cues.push(cue(pick("keywordEmphasis", emphasisIdx++), p.atSec, 0.65, "keywordEmphasis"));
     }
     if (idx >= 0) used.add(idx);
   }
+
+  // Enabled unless explicitly toggled off — the filter, applied once, right
+  // before each level's cues reach `finish()`.
+  const enabled = (c: SfxCue) => toggles[c.placement] !== false;
 
   if (level === "subtle") {
     // A closing accent, so even a light pass has a beginning and an end
     // instead of trailing off. By construction this is hook + up to
     // len(punches) + ending — real cut points, never a beat per caption.
-    if (outputSec > 3) cues.push(cue(pick("ending", 0), outputSec - 0.5, 0.55));
+    if (outputSec > 3) cues.push(cue(pick("ending", 0), outputSec - 0.5, 0.55, "ending"));
     if (cues.length < 2) {
       const spare = cards.find((c, i) => !used.has(i) && c.stress !== null);
-      if (spare) cues.push(cue(pick("keywordEmphasis", emphasisIdx++), spare.start, 0.55));
+      if (spare) cues.push(cue(pick("keywordEmphasis", emphasisIdx++), spare.start, 0.55, "keywordEmphasis"));
     }
-    return finish(cues, 4);
+    return finish(cues.filter(enabled), 4);
   }
 
   // EXPRESSIVE — a CTA accent near the close, then more of the words she
@@ -134,10 +161,10 @@ export function planSfx(
   const nearEnd = cards.filter((c, i) => !used.has(i) && c.start >= outputSec * 0.66);
   const ctaCard = nearEnd[nearEnd.length - 1];
   if (ctaCard) {
-    cues.push(cue(pick("cta", 0), ctaCard.start, 0.7));
+    cues.push(cue(pick("cta", 0), ctaCard.start, 0.7, "cta"));
     used.add(cards.indexOf(ctaCard));
   }
-  if (outputSec > 3) cues.push(cue(pick("ending", 0), outputSec - 0.5, 0.55));
+  if (outputSec > 3) cues.push(cue(pick("ending", 0), outputSec - 0.5, 0.55, "ending"));
 
   const remaining = cards
     .map((c, i) => ({ c, i }))
@@ -149,10 +176,10 @@ export function planSfx(
   for (let k = 0; k < wantExtra; k++) {
     const at = wantExtra === 1 ? 0 : Math.round(k * step);
     const { c } = remaining[Math.min(at, remaining.length - 1)];
-    cues.push(cue(pick("keywordEmphasis", emphasisIdx++), c.start, 0.55));
+    cues.push(cue(pick("keywordEmphasis", emphasisIdx++), c.start, 0.55, "keywordEmphasis"));
   }
 
-  return finish(cues, 8);
+  return finish(cues.filter(enabled), 8);
 }
 
 /** Sorted by time, with anything landing inside 0.15s of the previous cue

@@ -20,6 +20,7 @@ import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from "remo
 import type { Card } from "./phrase";
 
 export type CaptionStyle = "editorial" | "kinetic" | "minimal";
+export type CaptionPos = "low" | "mid";
 
 /**
  * The union of the three platforms' overlays on a 1080x1920 frame, in pixels.
@@ -57,6 +58,21 @@ export const WIDTH: Record<CaptionStyle, number> = {
  */
 const SHADOW = "0 1px 2px rgba(0,0,0,0.95), 0 2px 6px rgba(0,0,0,0.9), 0 6px 30px rgba(0,0,0,0.7)";
 
+/**
+ * THE SECOND SAFE-ZONE ANCHOR.
+ *
+ * "low" is the anchor every style already used: paddingBottom of exactly
+ * SAFE.bottom, flush against the platform-chrome exclusion band. "mid" is a
+ * genuinely different anchor, not a nudge on the same one — it centers the
+ * caption block in the vertical band BETWEEN SAFE.top and SAFE.bottom, so it
+ * clears both exclusion zones on all three platforms regardless of canvas
+ * height, computed from the real frame height rather than a hardcoded 1920.
+ */
+export function posPaddingBottom(pos: CaptionPos, height: number): number {
+  if (pos === "low") return SAFE.bottom;
+  return (height - SAFE.top + SAFE.bottom) / 2;
+}
+
 export type CaptionProps = {
   cards: Card[];
   style: CaptionStyle;
@@ -72,6 +88,14 @@ export type CaptionProps = {
    */
   lead: number;
   hang: number;
+  /**
+   * Multiplier on this style's own type scale (its authored fontSize), 0.75
+   * to 1.4. 1 reproduces today's exact sizes — 60 / 68 / 48 for Editorial,
+   * Kinetic and Minimal respectively.
+   */
+  scale: number;
+  /** Which safe-zone anchor the caption block sits on. See posPaddingBottom. */
+  pos: CaptionPos;
 };
 
 /** The card on screen at time t. Lead and hang come from the pace. */
@@ -87,7 +111,7 @@ function activeCard(cards: Card[], t: number, lead: number, hang: number): Card 
  * because the pace it belongs to is Quiet Authority and a serif reads as
  * something written rather than something generated.
  */
-const Editorial: React.FC<CaptionProps> = ({ cards, ink, glow, reduceMotion, lead, hang }) => {
+const Editorial: React.FC<CaptionProps> = ({ cards, ink, glow, reduceMotion, lead, hang, scale, pos }) => {
   const frame = useCurrentFrame();
   const { fps, height } = useVideoConfig();
   const t = frame / fps;
@@ -100,7 +124,7 @@ const Editorial: React.FC<CaptionProps> = ({ cards, ink, glow, reduceMotion, lea
 
   let idx = 0;
   return (
-    <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: SAFE.bottom }}>
+    <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: posPaddingBottom(pos, height) }}>
       <div
         style={{
           opacity,
@@ -108,7 +132,7 @@ const Editorial: React.FC<CaptionProps> = ({ cards, ink, glow, reduceMotion, lea
           maxWidth: 1080 - SAFE.side * 2,
           textAlign: "center",
           fontFamily: FAMILY.editorial,
-          fontSize: 60,
+          fontSize: 60 * scale,
           lineHeight: 1.24,
           letterSpacing: -0.4,
           color: ink,
@@ -158,22 +182,22 @@ const Editorial: React.FC<CaptionProps> = ({ cards, ink, glow, reduceMotion, lea
  * The stressed word carries weight and the accent, so the emphasis survives even
  * though every word is moving.
  */
-const Kinetic: React.FC<CaptionProps> = ({ cards, ink, glow, reduceMotion, lead, hang }) => {
+const Kinetic: React.FC<CaptionProps> = ({ cards, ink, glow, reduceMotion, lead, hang, scale, pos }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { fps, height } = useVideoConfig();
   const t = frame / fps;
   const card = activeCard(cards, t, lead, hang);
   if (!card) return null;
 
   let idx = 0;
   return (
-    <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: SAFE.bottom }}>
+    <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: posPaddingBottom(pos, height) }}>
       <div
         style={{
           maxWidth: 1080 - SAFE.side * 2,
           textAlign: "center",
           fontFamily: FAMILY.kinetic,
-          fontSize: 68,
+          fontSize: 68 * scale,
           fontWeight: 600,
           lineHeight: 1.16,
           letterSpacing: -1.2,
@@ -226,9 +250,9 @@ const Kinetic: React.FC<CaptionProps> = ({ cards, ink, glow, reduceMotion, lead,
  * rather than something she has to ask for. Wider lines and a smaller size mean
  * fewer cards and less movement in the lower third.
  */
-const Minimal: React.FC<CaptionProps> = ({ cards, ink, reduceMotion, lead, hang }) => {
+const Minimal: React.FC<CaptionProps> = ({ cards, ink, reduceMotion, lead, hang, scale, pos }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { fps, height } = useVideoConfig();
   const t = frame / fps;
   const card = activeCard(cards, t, lead, hang);
   if (!card) return null;
@@ -236,7 +260,7 @@ const Minimal: React.FC<CaptionProps> = ({ cards, ink, reduceMotion, lead, hang 
   const opacity = (reduceMotion ? 1 : interpolate(age, [0, 0.2], [0, 1], { extrapolateRight: "clamp" }));
 
   return (
-    <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: SAFE.bottom }}>
+    <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: posPaddingBottom(pos, height) }}>
       <div
         style={{
           opacity,
@@ -246,7 +270,7 @@ const Minimal: React.FC<CaptionProps> = ({ cards, ink, reduceMotion, lead, hang 
           // 40 was too small to read on a phone: quiet is a design intent, but
           // a caption nobody can read is not quiet, it is broken. Checked on the
           // rendered still rather than in the editor.
-          fontSize: 48,
+          fontSize: 48 * scale,
           fontWeight: 500,
           lineHeight: 1.3,
           letterSpacing: -0.2,

@@ -31,7 +31,7 @@ import { toCards, type Word } from "./phrase";
 import { Captions, WIDTH, SAFE, type CaptionStyle } from "./Captions";
 import { Look, type LookKey } from "./Look";
 import { PACES, PAUSE_SEC, inPointFor, type PauseKey } from "./pace";
-import { planSfx, sfxLibraryEntry, type SfxCue } from "./sfx";
+import { planSfx, sfxLibraryEntry, SFX_PLACEMENT_KEYS, type SfxCue, type SfxPlacementKey } from "./sfx";
 
 export const wordSchema = z.object({
   w: z.string(),
@@ -39,6 +39,33 @@ export const wordSchema = z.object({
   end: z.number(),
   gap_before: z.number().default(0),
 });
+
+/**
+ * A treated track cannot be REPRESENTABLE without the URL of the CLIP's own
+ * treated audio. An enum let `audio: "clean"` compile for any clip and quietly
+ * play whatever file happened to be wired to that name — a new clip's face
+ * over the August recording's voice, nothing anywhere reporting it. `original`
+ * carries no url because it is the video's own track, the one case with
+ * genuinely nothing to point at; `clean` and `studio` cannot be built without
+ * one, so a missing url is a parse error before a frame renders.
+ */
+export const audioSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("original") }),
+  z.object({ kind: z.literal("clean"), url: z.string().min(1) }),
+  z.object({ kind: z.literal("studio"), url: z.string().min(1) }),
+]);
+
+/**
+ * Built FROM sfx.ts's own SFX_PLACEMENT_KEYS rather than a hand-typed list of
+ * fields, so the two cannot drift apart: a placement added or removed there
+ * changes what this schema accepts automatically, instead of a toggle here
+ * silently doing nothing because sfx.ts never learned to filter on it.
+ */
+const sfxTogglesSchema = z.object(
+  Object.fromEntries(SFX_PLACEMENT_KEYS.map((k) => [k, z.boolean().optional()])) as {
+    [K in SfxPlacementKey]: z.ZodOptional<z.ZodBoolean>;
+  },
+);
 
 export const mantraReelSchema = z.object({
   videoUrl: z.string(),
@@ -49,6 +76,14 @@ export const mantraReelSchema = z.object({
   /** The one real silence, located in source seconds. */
   pauseAtSec: z.number(),
   pauseLengthSec: z.number(),
+  /**
+   * EXPLICIT TRIM, overriding both the hook-derived in-point AND `outSec`.
+   * Optional: when absent, the hook rule stands unchanged — `inPointFor`
+   * still decides where the cut opens, and `outSec` still decides where it
+   * closes. A render with no `trim` set is therefore identical in intent to
+   * one from before this field existed.
+   */
+  trim: z.object({ inSec: z.number(), outSec: z.number() }).optional(),
 
   /* ── THE SEVEN CHOICES. Each owns a different part of the render. ─────── */
 
@@ -71,6 +106,13 @@ export const mantraReelSchema = z.object({
   hookId: z.string().default(""),
 
   captions: z.enum(["editorial", "kinetic", "minimal"]).default("editorial"),
+  /** Multiplier on the caption style's own type scale. 1 reproduces today's
+   * exact sizes — see Captions.tsx. */
+  captionScale: z.number().min(0.75).max(1.4).default(1),
+  /** Which safe-zone anchor the caption block sits on. "low" is today's
+   * behaviour (unchanged); "mid" is a second, genuinely different anchor —
+   * see posPaddingBottom in Captions.tsx. */
+  captionPos: z.enum(["low", "mid"]).default("low"),
   /**
    * "source" means NO GRADE AT ALL — the video element is not wrapped in the
    * filter chain. It exists so a Look can be judged against the ungraded
@@ -82,15 +124,30 @@ export const mantraReelSchema = z.object({
    * ungraded reference does not require changing the colour pipeline itself.
    */
   look: z.enum(["source", "natural", "warm", "softCrisp"]).default("natural"),
+  /**
+   * Interpolates the LOOK's own filter parameters between no grade at all
+   * (0) and the full authored look (1) — see intensityOf() in Look.tsx. Has
+   * no effect when `look: "source"`, which already means no grade. Default 1
+   * reproduces today's exact output for every existing render.
+   */
+  lookIntensity: z.number().min(0).max(1).default(1),
   pace: z.enum(["quiet", "sharp", "human"]).default("quiet"),
   pause: z.enum(["keep", "tighten", "cut"]).default("keep"),
-  audio: z.enum(["original", "clean", "studio"]).default("clean"),
+  audio: audioSchema,
   /**
    * WHERE ANY OF THE EIGHT ORIGINALS IN public/sfx/ REACH THE RENDER.
    * See sfx.ts for the placement map. "none" is a literal empty list, not a
    * quiet default that still ships an effect.
    */
   sfx: z.enum(["none", "subtle", "expressive"]).default("none"),
+  /**
+   * Filters sfx.ts's PLANNED cues by placement — it does not re-decide which
+   * moments get an effect. Default {} (every key absent) means every
+   * placement stays on, so an omitted `sfxToggles` renders identically to
+   * today. "none" still means a literal empty list regardless of these: sfx.ts
+   * returns [] for it before ever reading a toggle.
+   */
+  sfxToggles: sfxTogglesSchema.default({}),
 
   /** Honours the viewer's reduced-motion preference. */
   reduceMotion: z.boolean().default(false),
@@ -103,13 +160,6 @@ export type MantraReelProps = z.infer<typeof mantraReelSchema>;
 const INK = "#F0E6DA";
 const GLOW = "#E0A75F";
 const GROUND = "#17100D";
-
-/** Where the three audio treatments live once tools/audio-levels.sh has run. */
-const AUDIO_FILE = {
-  original: null, // the video's own track, unmuted
-  clean: "mantra/audio/clean.wav",
-  studio: "mantra/audio/studio.wav",
-} as const;
 
 /**
  * The one hairline the boards put on every screen, and the only graphic here.
@@ -151,13 +201,17 @@ export function planOf(p: MantraReelProps) {
   const look = p.look;
   const audio = p.audio;
 
-  // HOOK owns the in-point. PAUSE owns the silence. Neither touches the other.
-  const inAt = inPointFor(p.words, p.hookText);
+  // HOOK owns the in-point, UNLESS an explicit trim overrides it — the hook
+  // rule still stands when trim is absent: inPointFor still decides where the
+  // cut opens. TRIM, when present, also overrides `outSec` for where the cut
+  // closes. PAUSE owns the silence either way; neither touches the other.
+  const inAt = p.trim ? p.trim.inSec : inPointFor(p.words, p.hookText);
+  const outSecEff = p.trim ? p.trim.outSec : p.outSec;
   const keep = PAUSE_SEC[p.pause as PauseKey];
 
   const tighten = keep !== null;
   const removed = tighten ? Math.max(0, p.pauseLengthSec - keep) : 0;
-  const firstSourceEnd = tighten ? p.pauseAtSec + keep : p.outSec;
+  const firstSourceEnd = tighten ? p.pauseAtSec + keep : outSecEff;
   const secondSourceStart = p.pauseAtSec + p.pauseLengthSec;
 
   /** Source seconds mapped onto the output timeline. */
@@ -168,11 +222,11 @@ export function planOf(p: MantraReelProps) {
     .map((w) => ({ ...w, start: remap(w.start), end: remap(w.end) }));
 
   const cards = toCards(words, { width: WIDTH[captions], hookWords: p.hookText.split(/\s+/) });
-  const outputSec = p.outSec - inAt - removed;
+  const outputSec = outSecEff - inAt - removed;
 
   return {
     pace, captions, look, audio, keep, inAt, tighten, removed,
-    firstSourceEnd, secondSourceStart, words, cards, outputSec,
+    firstSourceEnd, secondSourceStart, words, cards, outputSec, outSecEff,
   };
 }
 
@@ -199,8 +253,18 @@ const Shot: React.FC<{ src: string; startFrom?: number; muted: boolean; scale: n
  * version and this one look the same, the grade is doing nothing, and there is
  * no way to discover that without an ungraded render made the same way.
  */
-const Graded: React.FC<{ look: MantraReelProps["look"]; children: React.ReactNode }> = ({ look, children }) =>
-  look === "source" ? <>{children}</> : <Look look={look as LookKey}>{children}</Look>;
+const Graded: React.FC<{ look: MantraReelProps["look"]; intensity: number; children: React.ReactNode }> = ({
+  look,
+  intensity,
+  children,
+}) =>
+  look === "source" || intensity <= 0 ? (
+    <>{children}</>
+  ) : (
+    <Look look={look as LookKey} intensity={intensity}>
+      {children}
+    </Look>
+  );
 
 /**
  * VOICE ALWAYS WINS.
@@ -246,14 +310,13 @@ const SfxHit: React.FC<{ cue: SfxCue; duck: number; fps: number }> = ({ cue: c, 
 export const MantraReel: React.FC<MantraReelProps> = (props) => {
   const { fps } = useVideoConfig();
   const plan = planOf(props);
-  const { pace, tighten, inAt, firstSourceEnd, secondSourceStart, cards, captions, look, audio } = plan;
+  const { pace, tighten, inAt, firstSourceEnd, secondSourceStart, cards, captions, look, outSecEff } = plan;
 
   const punches = pace.punchIns(cards);
-  const audioFile = AUDIO_FILE[audio];
 
   /** See sfx.ts: this file decides no timing of its own, it only reads the
    * cards and punches already computed above. */
-  const sfxCues = planSfx(props.sfx, cards, punches, cards[0]?.start ?? 0, plan.outputSec);
+  const sfxCues = planSfx(props.sfx, cards, punches, cards[0]?.start ?? 0, plan.outputSec, props.sfxToggles);
 
   /**
    * The punch-in is applied by SPLITTING the shot at the punch point, so the
@@ -279,7 +342,7 @@ export const MantraReel: React.FC<MantraReelProps> = (props) => {
 
   return (
     <AbsoluteFill style={{ backgroundColor: GROUND }}>
-      <Graded look={look}>
+      <Graded look={look} intensity={props.lookIntensity}>
         {cuts.map((c, i) => {
           const fromF = Math.round(c.fromSec * fps);
           const frames = Math.max(1, Math.round((c.toSec - c.fromSec) * fps));
@@ -290,7 +353,7 @@ export const MantraReel: React.FC<MantraReelProps> = (props) => {
           if (!straddles) {
             return (
               <Sequence key={i} from={fromF} durationInFrames={frames}>
-                <Shot src={props.videoUrl} startFrom={Math.round(toSource(c.fromSec) * fps)} muted={audioFile !== null} scale={c.scale} />
+                <Shot src={props.videoUrl} startFrom={Math.round(toSource(c.fromSec) * fps)} muted={props.audio.kind !== "original"} scale={c.scale} />
               </Sequence>
             );
           }
@@ -298,10 +361,10 @@ export const MantraReel: React.FC<MantraReelProps> = (props) => {
           return (
             <React.Fragment key={i}>
               <Sequence from={fromF} durationInFrames={firstFrames}>
-                <Shot src={props.videoUrl} startFrom={Math.round(toSource(c.fromSec) * fps)} muted={audioFile !== null} scale={c.scale} />
+                <Shot src={props.videoUrl} startFrom={Math.round(toSource(c.fromSec) * fps)} muted={props.audio.kind !== "original"} scale={c.scale} />
               </Sequence>
               <Sequence from={fromF + firstFrames} durationInFrames={Math.max(1, frames - firstFrames)}>
-                <Shot src={props.videoUrl} startFrom={Math.round(secondSourceStart * fps)} muted={audioFile !== null} scale={c.scale} />
+                <Shot src={props.videoUrl} startFrom={Math.round(secondSourceStart * fps)} muted={props.audio.kind !== "original"} scale={c.scale} />
               </Sequence>
             </React.Fragment>
           );
@@ -309,18 +372,20 @@ export const MantraReel: React.FC<MantraReelProps> = (props) => {
       </Graded>
 
       {/* The processed track, cut the same way the picture is, so a tightened
-          pause removes the same span from both. */}
-      {audioFile ? (
+          pause removes the same span from both. `original` has no url — it
+          is the video's own track, already unmuted above — so this block
+          never runs for it. */}
+      {props.audio.kind !== "original" ? (
         <>
           <Sequence durationInFrames={Math.max(1, Math.round((firstSourceEnd - inAt) * fps))}>
-            <Audio src={staticFile(audioFile)} startFrom={Math.round(inAt * fps)} />
+            <Audio src={props.audio.url} startFrom={Math.round(inAt * fps)} />
           </Sequence>
           {tighten ? (
             <Sequence
               from={Math.round((firstSourceEnd - inAt) * fps)}
-              durationInFrames={Math.max(1, Math.round((props.outSec - secondSourceStart) * fps))}
+              durationInFrames={Math.max(1, Math.round((outSecEff - secondSourceStart) * fps))}
             >
-              <Audio src={staticFile(audioFile)} startFrom={Math.round(secondSourceStart * fps)} />
+              <Audio src={props.audio.url} startFrom={Math.round(secondSourceStart * fps)} />
             </Sequence>
           ) : null}
         </>
@@ -339,6 +404,8 @@ export const MantraReel: React.FC<MantraReelProps> = (props) => {
         reduceMotion={props.reduceMotion}
         lead={pace.captionLead}
         hang={pace.captionHang}
+        scale={props.captionScale}
+        pos={props.captionPos}
       />
     </AbsoluteFill>
   );

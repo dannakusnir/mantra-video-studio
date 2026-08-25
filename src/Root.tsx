@@ -617,8 +617,20 @@ export const RemotionRoot: React.FC = () => {
           look: v.look,
           pace: "quiet",
           pause: "keep",
-          audio: "clean",
+          // staticFile() is correct HERE, unlike in the product path: every
+          // preview below renders the AUGUST clip itself, so pairing it with
+          // the August clip's own processed tracks is the right pairing, not
+          // the defect AUDIO_CONTRACT.md describes.
+          audio: { kind: "clean", url: staticFile("mantra/audio/clean.wav") },
           sfx: "none",
+          // The four V1 fields, all at the value the schema itself defaults
+          // to — required here only because TS's inferred output type (after
+          // zod defaults apply) is non-optional; every render below is
+          // therefore unchanged from before these fields existed.
+          captionScale: 1,
+          captionPos: "low",
+          lookIntensity: 1,
+          sfxToggles: {},
           reduceMotion: false,
         } as const;
         return (
@@ -649,8 +661,14 @@ export const RemotionRoot: React.FC = () => {
           look: v.look,
           pace: v.pace,
           pause: v.pause,
-          audio: v.audio,
+          audio: v.audio === "clean"
+            ? { kind: "clean" as const, url: staticFile("mantra/audio/clean.wav") }
+            : { kind: "studio" as const, url: staticFile("mantra/audio/studio.wav") },
           sfx: "none",
+          captionScale: 1,
+          captionPos: "low",
+          lookIntensity: 1,
+          sfxToggles: {},
           reduceMotion: false,
         } as const;
         return (
@@ -693,8 +711,12 @@ export const RemotionRoot: React.FC = () => {
           look: v.look,
           pace: "sharp",
           pause: "keep",
-          audio: "clean",
+          audio: { kind: "clean", url: staticFile("mantra/audio/clean.wav") },
           sfx: v.sfx,
+          captionScale: 1,
+          captionPos: "low",
+          lookIntensity: 1,
+          sfxToggles: {},
           reduceMotion: false,
         } as const;
         return (

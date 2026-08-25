@@ -189,6 +189,88 @@ export const LOOKS: Record<LookKey, LookDef> = {
   },
 };
 
+/**
+ * IDENTITY, in the same units as LookDef's own magnitude fields — the values
+ * at which every SVG primitive below is a mathematical no-op:
+ *   feComponentTransfer(linear, slope 1)      -> exposure/white-balance gain
+ *   the tone curve with contrastCurve 0, headroom 0, kneeStart 1, lift 0,
+ *     tint 0                                  -> buildChannelTable() returns
+ *                                                 the bare identity ramp y=x
+ *   feColorMatrix skin-protection at weight 0 -> rr=1, rg=0, rb=0 (identity)
+ *   feColorMatrix saturate(1)                 -> identity
+ *   feComposite arithmetic with gain 1, diff 0 -> k2=1,k3=0, output = input
+ * `intensityOf` below lerps every look toward exactly this at t=0, so
+ * `lookIntensity: 0` renders through the SAME filter graph as a full look —
+ * not a separate "skip the filter" branch — and still comes out identical to
+ * an ungraded frame because the math is provably an identity, not because
+ * the two code paths happen to agree.
+ */
+const IDENTITY_MAGNITUDE = {
+  exposureStops: 0,
+  whiteBalance: 1,
+  contrastCurveStrength: 0,
+  highlightHeadroom: 0,
+  highlightKneeStart: 1,
+  shadowLift: 0,
+  shadowTint: 0,
+  rLumaBlend: 0,
+  sharpenStrength: 0,
+  clarityStrength: 0,
+  saturation: 1,
+} as const;
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/**
+ * Interpolates a look's MAGNITUDE fields between "no grade at all" (t=0) and
+ * the look's own authored values (t=1). Spatial extents (blur radii) are
+ * left at the look's own value at every t: a radius paired with strength 0
+ * is already a no-op regardless of its number (see feComposite above), so
+ * interpolating it would change nothing about the rendered pixels and would
+ * only make the identity case harder to read.
+ */
+export function intensityOf(def: LookDef, t: number): LookDef {
+  const c = Math.min(1, Math.max(0, t));
+  return {
+    ...def,
+    exposure: { stops: lerp(IDENTITY_MAGNITUDE.exposureStops, def.exposure.stops, c) },
+    whiteBalance: {
+      r: lerp(IDENTITY_MAGNITUDE.whiteBalance, def.whiteBalance.r, c),
+      g: lerp(IDENTITY_MAGNITUDE.whiteBalance, def.whiteBalance.g, c),
+      b: lerp(IDENTITY_MAGNITUDE.whiteBalance, def.whiteBalance.b, c),
+    },
+    contrastCurve: { strength: lerp(IDENTITY_MAGNITUDE.contrastCurveStrength, def.contrastCurve.strength, c) },
+    highlightRecovery: {
+      headroom: lerp(IDENTITY_MAGNITUDE.highlightHeadroom, def.highlightRecovery.headroom, c),
+      kneeStart: lerp(IDENTITY_MAGNITUDE.highlightKneeStart, def.highlightRecovery.kneeStart, c),
+    },
+    shadowControl: {
+      lift: lerp(IDENTITY_MAGNITUDE.shadowLift, def.shadowControl.lift, c),
+      tint: {
+        r: lerp(IDENTITY_MAGNITUDE.shadowTint, def.shadowControl.tint.r, c),
+        g: lerp(IDENTITY_MAGNITUDE.shadowTint, def.shadowControl.tint.g, c),
+        b: lerp(IDENTITY_MAGNITUDE.shadowTint, def.shadowControl.tint.b, c),
+      },
+    },
+    skinToneProtection: {
+      // saturationCeiling is documentation only (see the field's own comment
+      // above) — it is never read by the filter build below, so it is passed
+      // through unscaled rather than interpolated toward a meaningless target.
+      saturationCeiling: def.skinToneProtection.saturationCeiling,
+      rLumaBlend: lerp(IDENTITY_MAGNITUDE.rLumaBlend, def.skinToneProtection.rLumaBlend, c),
+    },
+    controlledSharpening: {
+      radius: def.controlledSharpening.radius,
+      strength: lerp(IDENTITY_MAGNITUDE.sharpenStrength, def.controlledSharpening.strength, c),
+    },
+    localClarity: {
+      radius: def.localClarity.radius,
+      strength: lerp(IDENTITY_MAGNITUDE.clarityStrength, def.localClarity.strength, c),
+    },
+    saturation: { value: lerp(IDENTITY_MAGNITUDE.saturation, def.saturation.value, c) },
+  };
+}
+
 const CURVE_POINTS = 17;
 
 /**
@@ -252,11 +334,15 @@ function skinProtectionMatrix(weight: number): string {
   );
 }
 
-export const Look: React.FC<{ look: LookKey; children: React.ReactNode }> = ({
+export const Look: React.FC<{ look: LookKey; children: React.ReactNode; intensity?: number }> = ({
   look,
   children,
+  intensity = 1,
 }) => {
-  const def = LOOKS[look];
+  // At intensity 1 this is the look's own authored def, unchanged — lerp(a,b,1)
+  // is exactly b in floating point (a + (b-a)*1 === b), but skipping the call
+  // entirely removes any doubt for the case every existing render still uses.
+  const def = intensity >= 1 ? LOOKS[look] : intensityOf(LOOKS[look], intensity);
   const reactId = React.useId().replace(/[^a-zA-Z0-9]/g, "");
   const filterId = `mantra-look-${look}-${reactId}`;
 
