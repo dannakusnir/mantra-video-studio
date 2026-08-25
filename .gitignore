@@ -16,3 +16,8 @@ public/mantra/*.mov
 public/mantra/*.wav
 public/mantra/audio/
 public/mantra/looks/
+
+# QA renders and QA output material (tools/qa/). Already covered by the
+# top-level "out" ignore above; listed explicitly too per the QA ticket.
+out/qa/
+out/looks/

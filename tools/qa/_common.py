@@ -102,7 +102,13 @@ def sample_frames_rgb(video_path, n_samples, scale_w=None, scale_h=None, start_p
 
     lo = dur * start_pad
     span = dur * (1 - start_pad - end_pad)
-    fps_val = n_samples / span
+    # Over-request a couple of extra frames and truncate to exactly
+    # n_samples: ffmpeg's fps filter can land one short of the arithmetic
+    # count on rounding, especially on very short (sub-2s) clips like the
+    # synthetic fixtures in test_qa.py -- padding absorbs that without
+    # affecting real footage (the 2 extra decoded frames are just discarded).
+    request_n = n_samples + 2
+    fps_val = request_n / span
 
     vf = f"fps={fps_val:.8f}"
     if scale_w or scale_h:
@@ -177,7 +183,17 @@ BG_BOX = (0, 0, 220, 170)              # flat off-white wall, top-left corner (b
 # its average is ~110/255. Treat it as "the best available dark/shadow
 # region", not a true black backdrop -- documented in tools/qa/README.md.
 BG_DARK_BOX = (930, 1350, 1080, 1750)
-REFERENCE_T = 1.5                       # seconds; clean frame, hands not in shot
+# REFERENCE_T is keyed to the FINAL out/looks/L*.mp4 renders' own timeline,
+# not the raw source proxy's. Those renders run pace-edit/pause trimming on
+# top of the raw talking footage (measured: raw proxy is 26.27s/788 frames,
+# the four look renders are all 23.9s/717 frames, identical to each other),
+# so a timestamp measured on the raw proxy does NOT point at the same visual
+# moment in the rendered looks -- checked directly: t=1.5s in the raw proxy
+# is a clean shot, but t=1.5s in L0-Source.mp4 has the hand already raised
+# over BG_DARK_BOX (the pace edit moved the gesture earlier). t=0.6s in the
+# rendered looks is the clean, hands-down equivalent -- verified the same
+# way (see tools/qa/README.md).
+REFERENCE_T = 0.6                       # seconds, on the out/looks/L*.mp4 timeline
 
 
 def crop_box(frame, box):

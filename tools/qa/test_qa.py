@@ -94,12 +94,15 @@ def make_split_tone_img(shadow_rb, highlight_rb):
     return np.clip(arr, 0, 255).astype(np.uint8)
 
 
-def make_lavfi_video(out_path, lavfi_source, duration=1.0, fps=10, w=160, h=284):
+def make_lavfi_video(out_path, lavfi_source, duration=2.0, fps=10, w=160, h=284):
     """lavfi_source: full lavfi source expression, e.g. 'color=c=gray' or
-    'testsrc2' -- size/duration/rate are appended as additional colon-joined
-    options, matching how ffmpeg's lavfi sources actually take options."""
+    'testsrc2'. ffmpeg's filter syntax needs "=" between the filter name and
+    its first option, then ":" between subsequent options -- so if
+    lavfi_source already has options (contains "="), join with ":"; if it's
+    a bare filter name (e.g. 'testsrc2'), join with "=" instead."""
+    sep = ":" if "=" in lavfi_source else "="
     cmd = [c.FFMPEG, "-y", "-v", "error", "-f", "lavfi",
-           "-i", f"{lavfi_source}:size={w}x{h}:duration={duration}:rate={fps}",
+           "-i", f"{lavfi_source}{sep}size={w}x{h}:duration={duration}:rate={fps}",
            "-pix_fmt", "yuv420p", out_path]
     subprocess.run(cmd, check=True)
 
@@ -223,8 +226,8 @@ def run_all(tmp):
     flat_video = os.path.join(tmp, "L0-flat.mp4")
     edgy_video = os.path.join(tmp, "L1-edgy-noisy.mp4")
     try:
-        make_lavfi_video(flat_video, "color=c=gray", duration=1.0, fps=10)
-        make_lavfi_video(edgy_video, "testsrc2", duration=1.0, fps=10)
+        make_lavfi_video(flat_video, "color=c=gray", fps=10)
+        make_lavfi_video(edgy_video, "testsrc2", fps=10)
         # bake noise into the edgy video with a second pass
         edgy_noisy_video = os.path.join(tmp, "L1-edgy-noisy2.mp4")
         subprocess.run([c.FFMPEG, "-y", "-v", "error", "-i", edgy_video,
