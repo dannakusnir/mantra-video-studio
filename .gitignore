@@ -21,3 +21,10 @@ public/mantra/looks/
 # top-level "out" ignore above; listed explicitly too per the QA ticket.
 out/qa/
 out/looks/
+
+# SFX pack QA output (spectrograms/waveforms/controls from tools/sfx/).
+# Already covered by the top-level "out" ignore above; listed explicitly
+# too, same convention as out/qa/ and out/looks/. The WAVs themselves live
+# in public/sfx/ (tracked, not ignored — see public/mantra/*.wav above,
+# which does not apply to this directory).
+out/sfx/

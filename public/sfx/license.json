@@ -1,0 +1,18 @@
+{
+  "package": "Mantra SFX Pack",
+  "version": "1.0.0",
+  "creationDate": "2026-08-24",
+  "creator": "Mantra Digital House (synthesized by Claude Code / tools/sfx/make-sfx.py)",
+  "statement": "All eight sound effects in this package are Mantra original works, synthesized from scratch using oscillators, filtered noise, and amplitude/frequency envelopes (see tools/sfx/make-sfx.py). No third-party samples, loops, sample libraries, or stock SFX were used, sampled, or referenced in their creation.",
+  "licence": "Mantra Original. Synthesized from scratch (oscillators, filtered noise, envelopes) with no third-party samples, loops, or libraries. All rights reserved to Mantra Digital House.",
+  "effects": [
+    "soft-tick",
+    "clean-click",
+    "subtle-pop",
+    "airy-whoosh",
+    "quick-rise",
+    "low-soft-impact",
+    "light-shimmer",
+    "warm-chime"
+  ]
+}
