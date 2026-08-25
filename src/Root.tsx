@@ -63,6 +63,16 @@ const LOOK_VERSIONS = [
   { id: "L3-SoftCrisp", look: "softCrisp" },
 ] as const;
 
+/**
+ * THE SFX PACK'S ONLY WIRING TEST. See the comment where this is mapped, and
+ * sfx.ts for what each level actually places.
+ */
+const SFX_SCENARIOS = [
+  { id: "S1-Natural-Minimal-NoSFX",       look: "natural",   captions: "minimal",   sfx: "none" },
+  { id: "S2-Warm-Editorial-Subtle",       look: "warm",      captions: "editorial", sfx: "subtle" },
+  { id: "S3-SoftCrisp-Kinetic-Expressive", look: "softCrisp", captions: "kinetic",  sfx: "expressive" },
+] as const;
+
 const athenaFirstSchema = podcastReelSchema.extend({
   athenaImageUrl: z.string().optional(),
   audioUrl: z.string().optional(),
@@ -608,6 +618,7 @@ export const RemotionRoot: React.FC = () => {
           pace: "quiet",
           pause: "keep",
           audio: "clean",
+          sfx: "none",
           reduceMotion: false,
         } as const;
         return (
@@ -639,6 +650,51 @@ export const RemotionRoot: React.FC = () => {
           pace: v.pace,
           pause: v.pause,
           audio: v.audio,
+          sfx: "none",
+          reduceMotion: false,
+        } as const;
+        return (
+          <Composition
+            key={v.id}
+            id={v.id}
+            component={MantraReel}
+            width={1080}
+            height={1920}
+            fps={30}
+            durationInFrames={Math.max(1, Math.round(outputSeconds(base) * 30))}
+            schema={mantraReelSchema}
+            defaultProps={base}
+          />
+        );
+      })}
+
+      {/* THE THREE SFX SCENARIOS, 25 Aug, at Danna's exact specification.
+          S1/S2/S3 change ONLY look, captions and sfx. Hook, pace, pause and
+          audio are held identical across all three on purpose: a
+          side-by-side that also changed the cut points or the tempo would
+          confound "does the SFX pack read as a level" with "does the edit
+          read differently", and there would be no way to tell which one
+          moved. `pace: "sharp"` was picked (not "quiet") because it is the
+          only pace that produces a real punch-in — without one, "subtle"
+          and "expressive" would have no deliberate cut to hang a sound on,
+          only the hook and the close. See sfx.ts for how each level turns
+          that one real cut, the hook, and her own stressed words into a
+          placement list. */}
+      {SFX_SCENARIOS.map((v) => {
+        const base = {
+          videoUrl: staticFile("mantra/danna-01-proxy.mp4"),
+          words: MANTRA_WORDS,
+          outSec: MANTRA_OUT,
+          pauseAtSec: MANTRA_PAUSE_AT,
+          pauseLengthSec: MANTRA_PAUSE_LEN,
+          hookText: HOOK_VERBATIM,
+          hookId: "verbatim",
+          captions: v.captions,
+          look: v.look,
+          pace: "sharp",
+          pause: "keep",
+          audio: "clean",
+          sfx: v.sfx,
           reduceMotion: false,
         } as const;
         return (

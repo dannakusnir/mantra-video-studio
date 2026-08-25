@@ -31,6 +31,7 @@ import { toCards, type Word } from "./phrase";
 import { Captions, WIDTH, SAFE, type CaptionStyle } from "./Captions";
 import { Look, type LookKey } from "./Look";
 import { PACES, PAUSE_SEC, inPointFor, type PauseKey } from "./pace";
+import { planSfx, sfxLibraryEntry, type SfxCue } from "./sfx";
 
 export const wordSchema = z.object({
   w: z.string(),
@@ -49,7 +50,7 @@ export const mantraReelSchema = z.object({
   pauseAtSec: z.number(),
   pauseLengthSec: z.number(),
 
-  /* ── THE SIX CHOICES. Each owns a different part of the render. ───────── */
+  /* ── THE SEVEN CHOICES. Each owns a different part of the render. ─────── */
 
   /**
    * THE HOOK, and it decides WHERE THE CUT STARTS.
@@ -84,6 +85,12 @@ export const mantraReelSchema = z.object({
   pace: z.enum(["quiet", "sharp", "human"]).default("quiet"),
   pause: z.enum(["keep", "tighten", "cut"]).default("keep"),
   audio: z.enum(["original", "clean", "studio"]).default("clean"),
+  /**
+   * WHERE ANY OF THE EIGHT ORIGINALS IN public/sfx/ REACH THE RENDER.
+   * See sfx.ts for the placement map. "none" is a literal empty list, not a
+   * quiet default that still ships an effect.
+   */
+  sfx: z.enum(["none", "subtle", "expressive"]).default("none"),
 
   /** Honours the viewer's reduced-motion preference. */
   reduceMotion: z.boolean().default(false),
@@ -195,6 +202,47 @@ const Shot: React.FC<{ src: string; startFrom?: number; muted: boolean; scale: n
 const Graded: React.FC<{ look: MantraReelProps["look"]; children: React.ReactNode }> = ({ look, children }) =>
   look === "source" ? <>{children}</> : <Look look={look as LookKey}>{children}</Look>;
 
+/**
+ * VOICE ALWAYS WINS.
+ *
+ * A cue whose onset falls while she is actively speaking — inside some
+ * card's own [start, end], the same window the captions render from — is
+ * ducked to half its planned volume. A cue that lands in an actual gap (the
+ * one real silence, or before the first word / after the last) plays at its
+ * full planned volume. "Is she speaking right now" is read off the real
+ * transcript, not guessed.
+ */
+function duckFor(atSec: number, cards: { start: number; end: number }[]): number {
+  const speaking = cards.some((c) => atSec >= c.start - 0.02 && atSec <= c.end + 0.02);
+  return speaking ? 0.5 : 1;
+}
+
+/**
+ * One SFX hit: staticFile() into Remotion's <Audio>, sized to the effect's
+ * own declared duration, with a short linear fade at each end so a cue that
+ * lands mid-cut never clicks.
+ */
+const SfxHit: React.FC<{ cue: SfxCue; duck: number; fps: number }> = ({ cue: c, duck, fps }) => {
+  const entry = sfxLibraryEntry(c.id);
+  const frames = Math.max(1, Math.round(entry.durationSec * fps));
+  const from = Math.round(c.atSec * fps);
+  const peak = c.volume * duck;
+  const fadeIn = Math.min(3, frames);
+  const fadeOut = Math.min(4, frames);
+  return (
+    <Sequence from={from} durationInFrames={frames}>
+      <Audio
+        src={staticFile(`sfx/${entry.id}.wav`)}
+        volume={(f) => {
+          const inRamp = fadeIn > 0 ? Math.min(1, f / fadeIn) : 1;
+          const outRamp = fadeOut > 0 ? Math.min(1, (frames - 1 - f) / fadeOut) : 1;
+          return peak * Math.max(0, Math.min(inRamp, outRamp));
+        }}
+      />
+    </Sequence>
+  );
+};
+
 export const MantraReel: React.FC<MantraReelProps> = (props) => {
   const { fps } = useVideoConfig();
   const plan = planOf(props);
@@ -202,6 +250,10 @@ export const MantraReel: React.FC<MantraReelProps> = (props) => {
 
   const punches = pace.punchIns(cards);
   const audioFile = AUDIO_FILE[audio];
+
+  /** See sfx.ts: this file decides no timing of its own, it only reads the
+   * cards and punches already computed above. */
+  const sfxCues = planSfx(props.sfx, cards, punches, cards[0]?.start ?? 0, plan.outputSec);
 
   /**
    * The punch-in is applied by SPLITTING the shot at the punch point, so the
@@ -273,6 +325,10 @@ export const MantraReel: React.FC<MantraReelProps> = (props) => {
           ) : null}
         </>
       ) : null}
+
+      {sfxCues.map((c, i) => (
+        <SfxHit key={i} cue={c} duck={duckFor(c.atSec, cards)} fps={fps} />
+      ))}
 
       <ProgressRule />
       <Captions
