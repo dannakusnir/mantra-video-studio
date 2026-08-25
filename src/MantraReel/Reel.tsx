@@ -1,40 +1,36 @@
-// MANTRA REEL — the first composition built to Danna's editing DNA rather than
-// to a template.
-//
-// WHAT IT REFUSES TO DO, and every one of these is a line from the brief:
-//
-//   no cut every second on a talking head
-//   no transitions without a reason
-//   no automatic zoom
-//   no generic B-roll
-//   no changing her words
-//   hold the frame while the performance is good
-//   the captions make the rhythm
-//   keep a real silence when it serves the story
-//
-// So there is no wipe, no push, no Ken Burns, no sting, no logo animation and
-// no music bed. The only thing moving in this composition is her, and the words
-// arriving as she says them.
-//
-// THE ONE EDITORIAL DECISION lives in `pauseCut`. Her recording has a genuine
-// 1.94 second silence in the middle, after "and that's why I do this." and
-// before "I think that we all need this push". Version A keeps it whole.
-// Version B tightens it. Nothing else differs between the two, so if the two
-// files feel different, that difference is the pause and not a variable I
-// changed by accident.
+/**
+ * MANTRA REEL — one composition, three edits.
+ *
+ * The earlier version of this file produced two cuts that differed only in the
+ * length of one silence. Danna's verdict was that they were "כמעט זהות בחוויה",
+ * almost identical in experience, and she was right: a silence length is a
+ * setting, not a creative decision.
+ *
+ * So the composition now takes a PACE, and a pace changes the in-point, the
+ * caption style, the grade, the audio treatment and whether the frame ever
+ * moves — all at once. See pace.ts.
+ *
+ * WHAT IT STILL REFUSES TO DO, and every one is a line from the brief:
+ *
+ *   no cut every second on a talking head
+ *   no transitions without a reason
+ *   no automatic zoom (Sharp Signal CUTS to a tighter frame; it never glides)
+ *   no generic B-roll
+ *   no music bed, no logo sting
+ *   no changing her words
+ *   hold the frame while the performance is good
+ *
+ * The only graphic is one hairline carrying real progress, and it earns its
+ * place by being information rather than decoration.
+ */
 
 import React from "react";
-import {
-  AbsoluteFill,
-  Audio,
-  OffthreadVideo,
-  Sequence,
-  interpolate,
-  staticFile,
-  useCurrentFrame,
-  useVideoConfig,
-} from "remotion";
+import { AbsoluteFill, Audio, OffthreadVideo, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { z } from "zod";
+import { toCards, type Word } from "./phrase";
+import { Captions, WIDTH, SAFE, type CaptionStyle } from "./Captions";
+import { Look, type LookKey } from "./Look";
+import { PACES, PAUSE_SEC, inPointFor, type PauseKey } from "./pace";
 
 export const wordSchema = z.object({
   w: z.string(),
@@ -49,128 +45,75 @@ export const mantraReelSchema = z.object({
   words: z.array(wordSchema),
   /** Where the recording should end, in source seconds. */
   outSec: z.number(),
-  /**
-   * The pause, and what to do with it.
-   *
-   * `keepSec` null means keep every frame of it. A number means hold that many
-   * seconds and drop the rest, which is a real cut: the video jumps and the
-   * audio jumps with it.
-   */
+  /** The one real silence, located in source seconds. */
   pauseAtSec: z.number(),
   pauseLengthSec: z.number(),
-  pauseKeepSec: z.number().nullable(),
-  /** The line the reel is built on. Must appear verbatim in `words`. */
-  hook: z.string(),
+
+  /* ── THE SIX CHOICES. Each owns a different part of the render. ───────── */
+
+  /**
+   * THE HOOK, and it decides WHERE THE CUT STARTS.
+   *
+   * If this text is her own words, the video opens on them and her run-up is
+   * dropped. If it was worded by an agent it has no position in the clip and
+   * the cut starts at the beginning — see `inPointFor`, which returns 0 rather
+   * than guessing, because placing an agent's sentence at an invented timestamp
+   * is the fabrication the provenance rules exist to prevent.
+   *
+   * It also decides which word carries the caption emphasis.
+   *
+   * It is never drawn on screen as a title card: a hook the viewer reads before
+   * she says it is a spoiler, and one she never says at all is a lie.
+   */
+  hookText: z.string().default(""),
+  /** Carried through so the render props can be audited against the screen. */
+  hookId: z.string().default(""),
+
+  captions: z.enum(["editorial", "kinetic", "minimal"]).default("editorial"),
+  /**
+   * "source" means NO GRADE AT ALL — the video element is not wrapped in the
+   * filter chain. It exists so a Look can be judged against the ungraded
+   * original under identical captions, pace, pause and audio, which is the only
+   * way to see what the grade is actually doing. It is a QA value; it is not
+   * offered on the choice screen.
+   *
+   * Implemented here rather than as a fourth entry in LOOKS, so that adding an
+   * ungraded reference does not require changing the colour pipeline itself.
+   */
+  look: z.enum(["source", "natural", "warm", "crisp"]).default("natural"),
+  pace: z.enum(["quiet", "sharp", "human"]).default("quiet"),
+  pause: z.enum(["keep", "tighten", "cut"]).default("keep"),
+  audio: z.enum(["original", "clean", "studio"]).default("clean"),
+
+  /** Honours the viewer's reduced-motion preference. */
+  reduceMotion: z.boolean().default(false),
 });
 
 export type MantraReelProps = z.infer<typeof mantraReelSchema>;
 
-/* ── The look ──────────────────────────────────────────────────────────────
- * Read off motion/theme.ts in the app, so the video and the product are the
- * same object. Nothing here is a colour I liked.
- */
+/* ── The look of the type, read off motion/theme.ts in the app, so the video
+ *    and the product are the same object. Nothing here is a colour I liked. */
 const INK = "#F0E6DA";
 const GLOW = "#E0A75F";
 const GROUND = "#17100D";
 
-/**
- * LINES BROKEN BY HER OWN PAUSES, not by a word count.
- *
- * The first version chopped every four words and produced "about it and most",
- * which is a fragment spanning two clauses and reads as broken text. The brief
- * says the captions make the rhythm; a fixed chunk size destroys rhythm, it
- * does not create it.
- *
- * A line ends where SHE ended one: on her punctuation, or before a real gap in
- * the audio. `gap_before` comes from Whisper and is the actual measured silence
- * between two words, so the caption breaks where the speaker breathed.
- *
- * The character limit is a last resort for a long unbroken run, not the rule.
- */
-const BREATH_S = 0.18;
-// Long enough to hold a whole clause, which then WRAPS onto a second line
-// rather than being cut in half. 30 was breaking "comfortable about it and most
-// of" away from "us", which is the same fragment problem one level up.
-const MAX_CHARS = 46;
-
-function toLines(words: MantraReelProps["words"]) {
-  const lines: { text: string; start: number; end: number }[] = [];
-  let cur: typeof words = [];
-  const flush = () => {
-    if (!cur.length) return;
-    lines.push({
-      text: cur.map((w) => w.w).join(" "),
-      start: cur[0].start,
-      end: cur[cur.length - 1].end,
-    });
-    cur = [];
-  };
-  for (let i = 0; i < words.length; i++) {
-    cur.push(words[i]);
-    const w = words[i];
-    const next = words[i + 1];
-    const endsClause = /[.,!?;:]$/.test(w.w);
-    const breathAfter = next ? next.gap_before >= BREATH_S : true;
-    const wide = cur.map((x) => x.w).join(" ").length >= MAX_CHARS;
-    if (endsClause || breathAfter || wide) flush();
-  }
-  flush();
-  return lines;
-}
-
-function Captions({ words }: { words: MantraReelProps["words"] }) {
-  const frame = useCurrentFrame();
-  const { fps, height } = useVideoConfig();
-  const t = frame / fps;
-  const lines = React.useMemo(() => toLines(words), [words]);
-  const line = lines.find((l) => t >= l.start - 0.08 && t <= l.end + 0.36);
-  if (!line) return null;
-
-  // A short fade rather than a pop. The word is already arriving in the audio;
-  // the caption's job is to be legible, not to announce itself.
-  const age = t - (line.start - 0.08);
-  const opacity = interpolate(age, [0, 0.09], [0, 1], { extrapolateRight: "clamp" });
-
-  return (
-    <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: height * 0.085 }}>
-      <div
-        style={{
-          opacity,
-          maxWidth: "84%",
-          textAlign: "center",
-          fontFamily: "Georgia, 'Times New Roman', serif",
-          fontSize: 58,
-          lineHeight: 1.22,
-          color: INK,
-          // Legibility over a moving face, without a box. A box would be a
-          // panel that carries no information, which the brief rules out.
-          // Her shirt is cream and her hands cross the frame, so a soft shadow is
-          // not enough on its own. Two tight shadows plus one wide one keep the
-          // type readable over skin, fabric and the embroidered eye without
-          // putting a box behind it.
-          textShadow:
-            "0 1px 2px rgba(0,0,0,0.95), 0 2px 6px rgba(0,0,0,0.9), 0 6px 30px rgba(0,0,0,0.75)",
-          letterSpacing: -0.4,
-        }}
-      >
-        {line.text}
-      </div>
-    </AbsoluteFill>
-  );
-}
+/** Where the three audio treatments live once tools/audio-levels.sh has run. */
+const AUDIO_FILE = {
+  original: null, // the video's own track, unmuted
+  clean: "mantra/audio/clean.wav",
+  studio: "mantra/audio/studio.wav",
+} as const;
 
 /**
  * The one hairline the boards put on every screen, and the only graphic here.
- *
- * It rides the real progress of the clip. It is the only element on screen that
- * is not her or her words, and it earns that by carrying information: how far
- * through you are.
+ * It rides the real progress of the clip, which is what earns it the place.
+ * Kept inside the platform safe zone so no platform's chrome sits on it.
  */
-function ProgressRule() {
+const ProgressRule: React.FC = () => {
   const frame = useCurrentFrame();
-  const { durationInFrames, width, height } = useVideoConfig();
+  const { durationInFrames, width } = useVideoConfig();
   const p = frame / Math.max(1, durationInFrames - 1);
-  const y = height * 0.075;
+  const y = SAFE.top * 0.72;
   return (
     <AbsoluteFill>
       <div style={{ position: "absolute", left: 0, top: y, width, height: 1, background: "rgba(240,230,218,0.18)" }} />
@@ -189,63 +132,165 @@ function ProgressRule() {
       />
     </AbsoluteFill>
   );
+};
+
+/**
+ * THE PLAN. Pure arithmetic, exported so the render script, the tests and the
+ * composition all agree instead of each doing their own version of it.
+ */
+export function planOf(p: MantraReelProps) {
+  const pace = PACES[p.pace];
+  const captions: CaptionStyle = p.captions;
+  const look = p.look;
+  const audio = p.audio;
+
+  // HOOK owns the in-point. PAUSE owns the silence. Neither touches the other.
+  const inAt = inPointFor(p.words, p.hookText);
+  const keep = PAUSE_SEC[p.pause as PauseKey];
+
+  const tighten = keep !== null;
+  const removed = tighten ? Math.max(0, p.pauseLengthSec - keep) : 0;
+  const firstSourceEnd = tighten ? p.pauseAtSec + keep : p.outSec;
+  const secondSourceStart = p.pauseAtSec + p.pauseLengthSec;
+
+  /** Source seconds mapped onto the output timeline. */
+  const remap = (s: number) => (s >= secondSourceStart ? s - inAt - removed : s - inAt);
+
+  const words: Word[] = p.words
+    .filter((w) => w.start >= inAt - 0.001)
+    .map((w) => ({ ...w, start: remap(w.start), end: remap(w.end) }));
+
+  const cards = toCards(words, { width: WIDTH[captions], hookWords: p.hookText.split(/\s+/) });
+  const outputSec = p.outSec - inAt - removed;
+
+  return {
+    pace, captions, look, audio, keep, inAt, tighten, removed,
+    firstSourceEnd, secondSourceStart, words, cards, outputSec,
+  };
 }
 
-export const MantraReel: React.FC<MantraReelProps> = ({
-  videoUrl,
-  words,
-  outSec,
-  pauseAtSec,
-  pauseLengthSec,
-  pauseKeepSec,
-}) => {
+/**
+ * One shot of the take.
+ *
+ * `scale` is a CUT to a tighter framing, not a glide. The brief bans automatic
+ * zoom, so the value is constant for the whole shot and changes only where a
+ * punch-in says it does.
+ */
+const Shot: React.FC<{ src: string; startFrom?: number; muted: boolean; scale: number }> = ({ src, startFrom, muted, scale }) => (
+  <OffthreadVideo
+    src={src}
+    startFrom={startFrom}
+    muted={muted}
+    style={{ width: "100%", height: "100%", objectFit: "cover", transform: `scale(${scale})`, transformOrigin: "center 38%" }}
+  />
+);
+
+/**
+ * The colour pipeline, or deliberately none of it.
+ *
+ * `source` returns the children untouched. That is the control: if a graded
+ * version and this one look the same, the grade is doing nothing, and there is
+ * no way to discover that without an ungraded render made the same way.
+ */
+const Graded: React.FC<{ look: MantraReelProps["look"]; children: React.ReactNode }> = ({ look, children }) =>
+  look === "source" ? <>{children}</> : <Look look={look as LookKey}>{children}</Look>;
+
+export const MantraReel: React.FC<MantraReelProps> = (props) => {
   const { fps } = useVideoConfig();
-  const tighten = pauseKeepSec !== null;
-  const removed = tighten ? Math.max(0, pauseLengthSec - (pauseKeepSec as number)) : 0;
+  const plan = planOf(props);
+  const { pace, tighten, inAt, firstSourceEnd, secondSourceStart, cards, captions, look, audio } = plan;
 
-  // THE CUT, done honestly. Rather than speed-ramping or crossfading over the
-  // pause, the clip is played in two pieces and the second one starts later in
-  // the source. That is what a cut is. The audio moves with it because both
-  // pieces come from the same file.
-  const firstEnd = tighten ? pauseAtSec + (pauseKeepSec as number) : outSec;
-  const firstFrames = Math.round(firstEnd * fps);
-  const secondSourceStart = pauseAtSec + pauseLengthSec;
-  const secondFrames = tighten ? Math.round((outSec - secondSourceStart) * fps) : 0;
+  const punches = pace.punchIns(cards);
+  const audioFile = AUDIO_FILE[audio];
 
-  // Captions are on the timeline of the OUTPUT, so anything after the cut moves
-  // earlier by exactly what was removed. Nothing is retimed by hand.
-  const shifted = words.map((w) =>
-    w.start >= secondSourceStart ? { ...w, start: w.start - removed, end: w.end - removed } : w,
-  );
+  /**
+   * The punch-in is applied by SPLITTING the shot at the punch point, so the
+   * framing changes on a cut rather than on an animated transform. That is the
+   * difference between a punch-in and the automatic zoom the brief rules out.
+   */
+  const cuts: { fromSec: number; toSec: number; scale: number }[] = [];
+  {
+    const marks = [0, ...punches.map((x) => x.atSec)].filter((x, i, a) => a.indexOf(x) === i).sort((a, b) => a - b);
+    for (let i = 0; i < marks.length; i++) {
+      const from = marks[i];
+      const to = i + 1 < marks.length ? marks[i + 1] : plan.outputSec;
+      const p = punches.filter((x) => x.atSec <= from).sort((a, b) => b.atSec - a.atSec)[0];
+      cuts.push({ fromSec: from, toSec: to, scale: p ? p.scale : 1 });
+    }
+  }
+
+  /** Output second -> source second, the inverse of the remap in planOf. */
+  const toSource = (out: number) => {
+    const boundary = firstSourceEnd - inAt;
+    return out < boundary ? out + inAt : out - boundary + secondSourceStart;
+  };
 
   return (
     <AbsoluteFill style={{ backgroundColor: GROUND }}>
-      <Sequence durationInFrames={firstFrames}>
-        <OffthreadVideo src={videoUrl} muted={false} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-      </Sequence>
+      <Graded look={look}>
+        {cuts.map((c, i) => {
+          const fromF = Math.round(c.fromSec * fps);
+          const frames = Math.max(1, Math.round((c.toSec - c.fromSec) * fps));
+          // A cut that straddles the removed silence is split so each piece
+          // reads from the right place in the source.
+          const boundary = firstSourceEnd - inAt;
+          const straddles = c.fromSec < boundary && c.toSec > boundary && tighten;
+          if (!straddles) {
+            return (
+              <Sequence key={i} from={fromF} durationInFrames={frames}>
+                <Shot src={props.videoUrl} startFrom={Math.round(toSource(c.fromSec) * fps)} muted={audioFile !== null} scale={c.scale} />
+              </Sequence>
+            );
+          }
+          const firstFrames = Math.max(1, Math.round((boundary - c.fromSec) * fps));
+          return (
+            <React.Fragment key={i}>
+              <Sequence from={fromF} durationInFrames={firstFrames}>
+                <Shot src={props.videoUrl} startFrom={Math.round(toSource(c.fromSec) * fps)} muted={audioFile !== null} scale={c.scale} />
+              </Sequence>
+              <Sequence from={fromF + firstFrames} durationInFrames={Math.max(1, frames - firstFrames)}>
+                <Shot src={props.videoUrl} startFrom={Math.round(secondSourceStart * fps)} muted={audioFile !== null} scale={c.scale} />
+              </Sequence>
+            </React.Fragment>
+          );
+        })}
+      </Graded>
 
-      {tighten ? (
-        <Sequence from={firstFrames} durationInFrames={secondFrames}>
-          <OffthreadVideo
-            src={videoUrl}
-            startFrom={Math.round(secondSourceStart * fps)}
-            muted={false}
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
-        </Sequence>
+      {/* The processed track, cut the same way the picture is, so a tightened
+          pause removes the same span from both. */}
+      {audioFile ? (
+        <>
+          <Sequence durationInFrames={Math.max(1, Math.round((firstSourceEnd - inAt) * fps))}>
+            <Audio src={staticFile(audioFile)} startFrom={Math.round(inAt * fps)} />
+          </Sequence>
+          {tighten ? (
+            <Sequence
+              from={Math.round((firstSourceEnd - inAt) * fps)}
+              durationInFrames={Math.max(1, Math.round((props.outSec - secondSourceStart) * fps))}
+            >
+              <Audio src={staticFile(audioFile)} startFrom={Math.round(secondSourceStart * fps)} />
+            </Sequence>
+          ) : null}
+        </>
       ) : null}
 
       <ProgressRule />
-      <Captions words={shifted} />
+      <Captions
+        cards={cards}
+        style={captions}
+        ink={INK}
+        glow={GLOW}
+        reduceMotion={props.reduceMotion}
+        lead={pace.captionLead}
+        hang={pace.captionHang}
+      />
     </AbsoluteFill>
   );
 };
 
 /** Exported so the render script and the tests agree on the arithmetic. */
 export function outputSeconds(p: MantraReelProps): number {
-  if (p.pauseKeepSec === null) return p.outSec;
-  return p.outSec - (p.pauseLengthSec - p.pauseKeepSec);
+  return planOf(p).outputSec;
 }
 
-void Audio;
-void staticFile;
+void interpolate;

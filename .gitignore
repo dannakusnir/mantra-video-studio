@@ -14,3 +14,5 @@ whisper.cpp
 public/mantra/*.mp4
 public/mantra/*.mov
 public/mantra/*.wav
+public/mantra/audio/
+public/mantra/looks/

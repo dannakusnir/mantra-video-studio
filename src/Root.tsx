@@ -9,8 +9,59 @@ import { MontageReel } from "./PodcastReel/Montage";
 import { KlapMinimal } from "./PodcastReel/KlapMinimal";
 import { podcastReelSchema } from "./PodcastReel/schema";
 import { z } from "zod";
-import { MantraReel, mantraReelSchema } from "./MantraReel/Reel";
+import { MantraReel, mantraReelSchema, outputSeconds } from "./MantraReel/Reel";
 import MANTRA_WORDS from "../public/mantra/danna-01-words.json";
+
+/* The reference clip, measured rather than typed in. `pauseAtSec` is the end of
+   "this." and `pauseLengthSec` is the one real gap in the whole recording. */
+const MANTRA_OUT = 26.47;
+const MANTRA_PAUSE_AT = 10.4;
+const MANTRA_PAUSE_LEN = 1.94;
+/**
+ * THE HOOKS THAT REACH THE RENDER, and both are her own words.
+ *
+ * A spoken hook decides where the cut starts, so these two produce openings
+ * 16.7 seconds apart from the same source file. That is the whole proof that
+ * the hook node is wired rather than decorative.
+ */
+const HOOK_VERBATIM = "I don't need another tool to edit content";
+const HOOK_TENSION = "most of us don't have these shoulders to support us";
+
+/**
+ * A, B and C DELIBERATELY SHARE ONE HOOK. Danna's instruction: comparing three
+ * treatments while also changing the opening line would confound hook quality
+ * with visual quality, and there would be no way to tell which one moved.
+ */
+const REEL_VERSIONS = [
+  { id: "A-QuietAuthority", hookId: "verbatim", hookText: HOOK_VERBATIM,
+    captions: "editorial", look: "warm",    pace: "quiet", pause: "keep",    audio: "clean" },
+  { id: "B-SharpSignal",    hookId: "verbatim", hookText: HOOK_VERBATIM,
+    captions: "kinetic",   look: "crisp",   pace: "sharp", pause: "tighten", audio: "studio" },
+  { id: "C-HumanStory",     hookId: "verbatim", hookText: HOOK_VERBATIM,
+    captions: "minimal",   look: "natural", pace: "human", pause: "keep",    audio: "clean" },
+  // D changes ONE field against A. If the opening moves, the hook is wired.
+  { id: "D-StrongestHook",  hookId: "tension",  hookText: HOOK_TENSION,
+    captions: "editorial", look: "warm",    pace: "quiet", pause: "keep",    audio: "clean" },
+] as const;
+
+/**
+ * LOOK ISOLATION, 24 Aug, at Danna's instruction.
+ *
+ * Same source, same hook, same captions, same pace, same pause, same audio.
+ * The ONLY thing that changes across these four is the colour treatment, and
+ * one of them has no colour treatment at all.
+ *
+ * The reason this is a separate set rather than a reading of A/B/C: in A/B/C
+ * the grade moves together with the captions, the tempo and the audio, so
+ * nothing there can tell you whether a difference you can see is the grade. A
+ * comparison where four things change at once measures none of them.
+ */
+const LOOK_VERSIONS = [
+  { id: "L0-Source",  look: "source"  },
+  { id: "L1-Natural", look: "natural" },
+  { id: "L2-Warm",    look: "warm"    },
+  { id: "L3-Crisp",   look: "crisp"   },
+] as const;
 
 const athenaFirstSchema = podcastReelSchema.extend({
   athenaImageUrl: z.string().optional(),
@@ -109,6 +160,9 @@ export const RemotionRoot: React.FC = () => {
         durationInFrames={Math.round(26 * REEL_FPS)}
         schema={podcastReelSchema}
         defaultProps={{
+          athenaPipPosition: "top-right",
+          videoFit: "cover",
+          showLetterboxBrand: false,
           videoUrl: staticFile("reels/VIRAL1-RAW.mp4"),
           logoUrl: LOGO, boomUrl: BOOM, whooshUrl: WHOOSH, tickUrl: TICK, bgMusicUrl: BG_MUSIC,
           captionsUrl: staticFile("reels/viral1-captions.json"),
@@ -134,6 +188,9 @@ export const RemotionRoot: React.FC = () => {
         durationInFrames={Math.round(28 * REEL_FPS)}
         schema={podcastReelSchema}
         defaultProps={{
+          athenaPipPosition: "top-right",
+          videoFit: "cover",
+          showLetterboxBrand: false,
           videoUrl: staticFile("reels/VIRAL2-RAW.mp4"),
           logoUrl: LOGO, boomUrl: BOOM, whooshUrl: WHOOSH, tickUrl: TICK, bgMusicUrl: BG_MUSIC,
           captionsUrl: staticFile("reels/viral2-captions.json"),
@@ -159,6 +216,9 @@ export const RemotionRoot: React.FC = () => {
         durationInFrames={Math.round(27 * REEL_FPS)}
         schema={podcastReelSchema}
         defaultProps={{
+          athenaPipPosition: "top-right",
+          videoFit: "cover",
+          showLetterboxBrand: false,
           videoUrl: staticFile("reels/VIRAL3-RAW.mp4"),
           logoUrl: LOGO, boomUrl: BOOM, whooshUrl: WHOOSH, tickUrl: TICK, bgMusicUrl: BG_MUSIC,
           captionsUrl: staticFile("reels/viral3-captions.json"),
@@ -184,6 +244,9 @@ export const RemotionRoot: React.FC = () => {
         durationInFrames={Math.round(26 * REEL_FPS)}
         schema={podcastReelSchema}
         defaultProps={{
+          athenaPipPosition: "top-right",
+          videoFit: "cover",
+          showLetterboxBrand: false,
           videoUrl: staticFile("reels/W-VIRAL1-RAW.mp4"),
           logoUrl: LOGO, boomUrl: BOOM, whooshUrl: WHOOSH, tickUrl: TICK, bgMusicUrl: BG_MUSIC,
           captionsUrl: staticFile("reels/w-viral1-captions.json"),
@@ -209,6 +272,9 @@ export const RemotionRoot: React.FC = () => {
         durationInFrames={Math.round(28 * REEL_FPS)}
         schema={podcastReelSchema}
         defaultProps={{
+          athenaPipPosition: "top-right",
+          videoFit: "cover",
+          showLetterboxBrand: false,
           videoUrl: staticFile("reels/W-VIRAL2-RAW.mp4"),
           logoUrl: LOGO, boomUrl: BOOM, whooshUrl: WHOOSH, tickUrl: TICK, bgMusicUrl: BG_MUSIC,
           captionsUrl: staticFile("reels/w-viral2-captions.json"),
@@ -234,6 +300,8 @@ export const RemotionRoot: React.FC = () => {
         durationInFrames={Math.round(38 * REEL_FPS)}
         schema={podcastReelSchema}
         defaultProps={{
+          videoFit: "cover",
+          showLetterboxBrand: false,
           videoUrl: staticFile("reels/TINA-R1-ATHENA-SHORT-CLEAN.mp4"),
           logoUrl: LOGO, boomUrl: BOOM, whooshUrl: WHOOSH, tickUrl: TICK, bgMusicUrl: BG_MUSIC,
           captionsUrl: staticFile("reels/tina-r1-short-captions.json"),
@@ -263,6 +331,8 @@ export const RemotionRoot: React.FC = () => {
         durationInFrames={Math.round(38 * REEL_FPS)}
         schema={podcastReelSchema}
         defaultProps={{
+          videoFit: "cover",
+          showLetterboxBrand: false,
           videoUrl: staticFile("reels/TINA-R1-V11-CLEAN.mp4"),
           logoUrl: LOGO, boomUrl: BOOM, whooshUrl: WHOOSH, tickUrl: TICK, bgMusicUrl: BG_MUSIC,
           captionsUrl: staticFile("reels/tina-r1-short-captions.json"),
@@ -292,6 +362,9 @@ export const RemotionRoot: React.FC = () => {
         durationInFrames={Math.round(56 * REEL_FPS)}
         schema={podcastReelSchema}
         defaultProps={{
+          athenaPipPosition: "top-right",
+          videoFit: "cover",
+          showLetterboxBrand: false,
           videoUrl: staticFile("reels/TINA-R1-ATHENA-RAW.mp4"),
           logoUrl: LOGO, boomUrl: BOOM, whooshUrl: WHOOSH, tickUrl: TICK, bgMusicUrl: BG_MUSIC,
           captionsUrl: staticFile("reels/tina-r1-captions.json"),
@@ -320,6 +393,9 @@ export const RemotionRoot: React.FC = () => {
         durationInFrames={Math.round(38 * REEL_FPS)}
         schema={athenaFirstSchema}
         defaultProps={{
+          athenaPipPosition: "top-right",
+          videoFit: "cover",
+          showLetterboxBrand: false,
           videoUrl: "", // unused for AthenaFirst
           logoUrl: LOGO, boomUrl: BOOM, whooshUrl: WHOOSH, tickUrl: TICK, bgMusicUrl: BG_MUSIC,
           captionsUrl: staticFile("reels/tina-r1-short-captions.json"),
@@ -454,6 +530,9 @@ export const RemotionRoot: React.FC = () => {
         durationInFrames={Math.round(31 * REEL_FPS)}
         schema={montageSchema}
         defaultProps={{
+          athenaPipPosition: "top-right",
+          videoFit: "cover",
+          showLetterboxBrand: false,
           videoUrl: "",
           logoUrl: LOGO, boomUrl: BOOM, whooshUrl: WHOOSH, tickUrl: TICK, bgMusicUrl: BG_MUSIC,
           captionsUrl: staticFile("reels/tina-r1-short-captions.json"),
@@ -493,6 +572,9 @@ export const RemotionRoot: React.FC = () => {
         durationInFrames={Math.round(18 * REEL_FPS)}
         schema={podcastReelSchema}
         defaultProps={{
+          athenaPipPosition: "top-right",
+          videoFit: "cover",
+          showLetterboxBrand: false,
           videoUrl: staticFile("reels/W-VIRAL3-RAW.mp4"),
           logoUrl: LOGO, boomUrl: BOOM, whooshUrl: WHOOSH, tickUrl: TICK, bgMusicUrl: BG_MUSIC,
           captionsUrl: staticFile("reels/w-viral3-captions.json"),
@@ -507,45 +589,72 @@ export const RemotionRoot: React.FC = () => {
           return { props: { ...props, captions } };
         }}
       />
-      {/* STEP 0. Two cuts of Danna's own recording that differ in exactly one
-          editorial decision: what to do with the real 1.94s silence. */}
-      <Composition
-        id="Mantra-A-KeepTheFrame"
-        component={MantraReel}
-        width={1080}
-        height={1920}
-        fps={30}
-        durationInFrames={Math.round(26.47 * 30)}
-        schema={mantraReelSchema}
-        defaultProps={{
+      {/* THE FOUR OUTPUTS, 24 Aug, to Danna's exact specification.
+          A, B and C share ONE hook on purpose, so that any difference between
+          them is the visual and timing treatment and not the strength of the
+          opening line. D changes only the hook, which is what makes it the
+          proof that the hook node reaches the render at all. */}
+      {LOOK_VERSIONS.map((v) => {
+        const base = {
           videoUrl: staticFile("mantra/danna-01-proxy.mp4"),
           words: MANTRA_WORDS,
-          outSec: 26.47,
-          pauseAtSec: 10.40,
-          pauseLengthSec: 1.94,
-          hook: "I don't need another tool to edit content, I just need something that will help me create content",
-          pauseKeepSec: null,
-        }}
-      />
+          outSec: MANTRA_OUT,
+          pauseAtSec: MANTRA_PAUSE_AT,
+          pauseLengthSec: MANTRA_PAUSE_LEN,
+          hookText: HOOK_VERBATIM,
+          hookId: "verbatim",
+          captions: "editorial",
+          look: v.look,
+          pace: "quiet",
+          pause: "keep",
+          audio: "clean",
+          reduceMotion: false,
+        } as const;
+        return (
+          <Composition
+            key={v.id}
+            id={v.id}
+            component={MantraReel}
+            width={1080}
+            height={1920}
+            fps={30}
+            durationInFrames={Math.max(1, Math.round(outputSeconds(base) * 30))}
+            schema={mantraReelSchema}
+            defaultProps={base}
+          />
+        );
+      })}
 
-      <Composition
-        id="Mantra-B-TightenThePause"
-        component={MantraReel}
-        width={1080}
-        height={1920}
-        fps={30}
-        durationInFrames={Math.round((26.47 - (1.94 - 0.45)) * 30)}
-        schema={mantraReelSchema}
-        defaultProps={{
+      {REEL_VERSIONS.map((v) => {
+        const base = {
           videoUrl: staticFile("mantra/danna-01-proxy.mp4"),
           words: MANTRA_WORDS,
-          outSec: 26.47,
-          pauseAtSec: 10.40,
-          pauseLengthSec: 1.94,
-          hook: "I don't need another tool to edit content, I just need something that will help me create content",
-          pauseKeepSec: 0.45,
-        }}
-      />
+          outSec: MANTRA_OUT,
+          pauseAtSec: MANTRA_PAUSE_AT,
+          pauseLengthSec: MANTRA_PAUSE_LEN,
+          hookText: v.hookText,
+          hookId: v.hookId,
+          captions: v.captions,
+          look: v.look,
+          pace: v.pace,
+          pause: v.pause,
+          audio: v.audio,
+          reduceMotion: false,
+        } as const;
+        return (
+          <Composition
+            key={v.id}
+            id={v.id}
+            component={MantraReel}
+            width={1080}
+            height={1920}
+            fps={30}
+            durationInFrames={Math.max(1, Math.round(outputSeconds(base) * 30))}
+            schema={mantraReelSchema}
+            defaultProps={base}
+          />
+        );
+      })}
     </>
   );
 };
