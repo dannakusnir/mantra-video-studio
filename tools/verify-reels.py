@@ -21,7 +21,7 @@ FF, FP = "ffmpeg", "ffprobe"
 # whatever the code happened to produce.
 SPEC = {
     "A-QuietAuthority": dict(captions="editorial", look="warm",    pace="quiet", pause="keep",    audio="clean",  hook="verbatim", inAt=2.56),
-    "B-SharpSignal":    dict(captions="kinetic",   look="crisp",   pace="sharp", pause="tighten", audio="studio", hook="verbatim", inAt=2.56),
+    "B-SharpSignal":    dict(captions="kinetic",   look="softCrisp",   pace="sharp", pause="tighten", audio="studio", hook="verbatim", inAt=2.56),
     "C-HumanStory":     dict(captions="minimal",   look="natural", pace="human", pause="keep",    audio="clean",  hook="verbatim", inAt=2.56),
     "D-StrongestHook":  dict(captions="editorial", look="warm",    pace="quiet", pause="keep",    audio="clean",  hook="tension",  inAt=19.80)  # where the word "most" starts, read from the word list, not typed,
 }

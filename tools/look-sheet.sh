@@ -56,7 +56,7 @@ const LookStill = ({ look }) => (
 
 const LookSheetRoot = () => (
   <>
-    {["natural", "warm", "crisp"].map((look) => (
+    {["natural", "warm", "softCrisp"].map((look) => (
       <Composition
         key={look}
         id={`LookSheet-${look}`}
@@ -80,7 +80,7 @@ import { renderStill, selectComposition } from "@remotion/renderer";
 
 const entry = "$ENTRY";
 const outDir = "$REPO_ROOT/$OUT_DIR";
-const looks = ["natural", "warm", "crisp"];
+const looks = ["natural", "warm", "softCrisp"];
 const framesSec = [${FRAMES_SEC[@]/%/,}];
 const fps = $FPS;
 

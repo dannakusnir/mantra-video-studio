@@ -52,7 +52,7 @@
 
 import React from "react";
 
-export type LookKey = "natural" | "warm" | "crisp";
+export type LookKey = "natural" | "warm" | "softCrisp";
 
 export interface ChannelGain {
   r: number;
@@ -151,30 +151,41 @@ export const LOOKS: Record<LookKey, LookDef> = {
     // this stage — see the honest limitation note below.
     saturation: { value: 0.74 },
   },
-  crisp: {
-    key: "crisp",
-    label: "Crisp Contrast",
+  softCrisp: {
+    key: "softCrisp",
+    label: "Soft Crisp",
     description:
-      "A stronger contrast curve, deeper blacks, local clarity, controlled sharpening — with global saturation pulled below neutral and a heavier skin-protection blend, because a steep contrast curve widens per-channel separation on its own (that is a real, measurable side-effect, not a bug) and unchecked that reads as redness in the skin.",
+      "Definition without crushed blacks. Crispness here is edge micro-contrast (clarity + a small-radius unsharp mask), not black depth: the tone curve is steeper than Warm Editorial but its toe is LIFTED, not pulled down, so shadow detail survives the grade.",
     exposure: { stops: 0.05 },
     whiteBalance: { r: 1.0, g: 1.0, b: 1.0 },
-    contrastCurve: { strength: 0.46 },
-    highlightRecovery: { headroom: 0.045, kneeStart: 0.8 },
-    shadowControl: { lift: -0.1, tint: { r: -0.015, g: 0, b: 0.014 } },
-    // See the QA note in the file header: I could not find a saturate()
-    // value, rLumaBlend, or contrastCurve.strength for THIS look where
-    // global SATAVG reaches the source's -15% floor without also pushing
-    // skin-hue-band saturation above source — all three levers move both
-    // numbers in the same direction, skin-hue faster than global. Given
-    // that choice, this stays on the safe side of "red channel not above
-    // source" (the specific defect that was flagged) rather than chasing
-    // the general SATAVG band; it reads as a touch less saturated than
-    // source overall, not as reddened skin.
-    skinToneProtection: { saturationCeiling: 0.72, rLumaBlend: 0.4 },
+    // 0.34 sits between Warm (0.22) and the withdrawn Crisp Contrast (0.46).
+    // The reason it can carry more contrast than Warm without crushing is the
+    // POSITIVE lift below, not a gentler curve.
+    contrastCurve: { strength: 0.34 },
+    // More headroom than the withdrawn look had (0.045), because clarity and
+    // sharpening run AFTER the tone curve and both push highlights up: the
+    // curve's own ceiling has to leave them somewhere to go.
+    highlightRecovery: { headroom: 0.055, kneeStart: 0.78 },
+    // THE WHOLE POINT OF THIS LOOK. The withdrawn Crisp Contrast used
+    // lift: -0.1, and that single number is what failed: at strength 0.46 the
+    // S-curve already mapped source code 16 to 0, and the negative lift put
+    // everything below code 24 at literal black. Measured on the finished
+    // MP4: 1.13 percentage points MORE pixels at Y<=8 than the source, against
+    // a 0.05pp limit, with 1.10% of pixels that had detail in the source
+    // arriving at 0-8. Lift is positive here and never goes negative.
+    // Cool split-tone, so this reads as the opposite of Warm's shadows.
+    shadowControl: { lift: 0.08, tint: { r: -0.012, g: 0, b: 0.012 } },
+    // Both numbers are less aggressive than the withdrawn look's (0.72 / 0.4).
+    // They can be, because a gentler curve produces less per-channel
+    // separation to compensate for in the first place.
+    skinToneProtection: { saturationCeiling: 0.86, rLumaBlend: 0.22 },
     mildDenoise: { blurStdDeviation: 0 },
-    controlledSharpening: { radius: 0.5, strength: 0.22 },
-    localClarity: { radius: 3.5, strength: 0.16 },
-    saturation: { value: 0.72 },
+    // Down from 0.22 / 0.16. A small-radius unsharp mask does not distinguish
+    // an edge from skin grain, so past a point it amplifies pores rather than
+    // resolving detail. These are set below that point deliberately.
+    controlledSharpening: { radius: 0.5, strength: 0.15 },
+    localClarity: { radius: 3.5, strength: 0.12 },
+    saturation: { value: 0.86 },
   },
 };
 

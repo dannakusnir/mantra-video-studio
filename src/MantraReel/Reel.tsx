@@ -80,7 +80,7 @@ export const mantraReelSchema = z.object({
    * Implemented here rather than as a fourth entry in LOOKS, so that adding an
    * ungraded reference does not require changing the colour pipeline itself.
    */
-  look: z.enum(["source", "natural", "warm", "crisp"]).default("natural"),
+  look: z.enum(["source", "natural", "warm", "softCrisp"]).default("natural"),
   pace: z.enum(["quiet", "sharp", "human"]).default("quiet"),
   pause: z.enum(["keep", "tighten", "cut"]).default("keep"),
   audio: z.enum(["original", "clean", "studio"]).default("clean"),

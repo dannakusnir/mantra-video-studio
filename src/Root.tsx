@@ -36,7 +36,7 @@ const REEL_VERSIONS = [
   { id: "A-QuietAuthority", hookId: "verbatim", hookText: HOOK_VERBATIM,
     captions: "editorial", look: "warm",    pace: "quiet", pause: "keep",    audio: "clean" },
   { id: "B-SharpSignal",    hookId: "verbatim", hookText: HOOK_VERBATIM,
-    captions: "kinetic",   look: "crisp",   pace: "sharp", pause: "tighten", audio: "studio" },
+    captions: "kinetic",   look: "softCrisp", pace: "sharp", pause: "tighten", audio: "studio" },
   { id: "C-HumanStory",     hookId: "verbatim", hookText: HOOK_VERBATIM,
     captions: "minimal",   look: "natural", pace: "human", pause: "keep",    audio: "clean" },
   // D changes ONE field against A. If the opening moves, the hook is wired.
@@ -60,7 +60,7 @@ const LOOK_VERSIONS = [
   { id: "L0-Source",  look: "source"  },
   { id: "L1-Natural", look: "natural" },
   { id: "L2-Warm",    look: "warm"    },
-  { id: "L3-Crisp",   look: "crisp"   },
+  { id: "L3-SoftCrisp", look: "softCrisp" },
 ] as const;
 
 const athenaFirstSchema = podcastReelSchema.extend({
