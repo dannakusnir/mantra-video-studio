@@ -151,6 +151,18 @@ export const mantraReelSchema = z.object({
 
   /** Honours the viewer's reduced-motion preference. */
   reduceMotion: z.boolean().default(false),
+
+  /**
+   * CAM-001: horizontal flip, applied to the VIDEO LAYER ONLY -- see `Shot`.
+   *
+   * Captions, the progress rule and SFX are untouched by this. Flipped
+   * caption text is the classic double-mirroring bug: the picture is meant
+   * to read as a mirror of a front-camera take, but her own words are not a
+   * reflection of anything and must stay legible left-to-right regardless of
+   * whether the shot beneath them is flipped. Default false reproduces
+   * today's output for every existing render.
+   */
+  mirror: z.boolean().default(false),
 });
 
 export type MantraReelProps = z.infer<typeof mantraReelSchema>;
@@ -237,12 +249,28 @@ export function planOf(p: MantraReelProps) {
  * zoom, so the value is constant for the whole shot and changes only where a
  * punch-in says it does.
  */
-const Shot: React.FC<{ src: string; startFrom?: number; muted: boolean; scale: number }> = ({ src, startFrom, muted, scale }) => (
+const Shot: React.FC<{ src: string; startFrom?: number; muted: boolean; scale: number; mirror: boolean }> = ({
+  src,
+  startFrom,
+  muted,
+  scale,
+  mirror,
+}) => (
   <OffthreadVideo
     src={src}
     startFrom={startFrom}
     muted={muted}
-    style={{ width: "100%", height: "100%", objectFit: "cover", transform: `scale(${scale})`, transformOrigin: "center 38%" }}
+    style={{
+      width: "100%",
+      height: "100%",
+      objectFit: "cover",
+      // CAM-001: the flip lives on the VIDEO LAYER'S OWN transform, composed
+      // with the punch-in scale rather than as a separate wrapper -- so it
+      // affects exactly this shot and nothing drawn after it (captions,
+      // ProgressRule, SFX are siblings in the tree, not children of Shot).
+      transform: mirror ? `scaleX(-${scale}) scaleY(${scale})` : `scale(${scale})`,
+      transformOrigin: "center 38%",
+    }}
   />
 );
 
@@ -353,7 +381,7 @@ export const MantraReel: React.FC<MantraReelProps> = (props) => {
           if (!straddles) {
             return (
               <Sequence key={i} from={fromF} durationInFrames={frames}>
-                <Shot src={props.videoUrl} startFrom={Math.round(toSource(c.fromSec) * fps)} muted={props.audio.kind !== "original"} scale={c.scale} />
+                <Shot src={props.videoUrl} startFrom={Math.round(toSource(c.fromSec) * fps)} muted={props.audio.kind !== "original"} scale={c.scale} mirror={props.mirror} />
               </Sequence>
             );
           }
@@ -361,10 +389,10 @@ export const MantraReel: React.FC<MantraReelProps> = (props) => {
           return (
             <React.Fragment key={i}>
               <Sequence from={fromF} durationInFrames={firstFrames}>
-                <Shot src={props.videoUrl} startFrom={Math.round(toSource(c.fromSec) * fps)} muted={props.audio.kind !== "original"} scale={c.scale} />
+                <Shot src={props.videoUrl} startFrom={Math.round(toSource(c.fromSec) * fps)} muted={props.audio.kind !== "original"} scale={c.scale} mirror={props.mirror} />
               </Sequence>
               <Sequence from={fromF + firstFrames} durationInFrames={Math.max(1, frames - firstFrames)}>
-                <Shot src={props.videoUrl} startFrom={Math.round(secondSourceStart * fps)} muted={props.audio.kind !== "original"} scale={c.scale} />
+                <Shot src={props.videoUrl} startFrom={Math.round(secondSourceStart * fps)} muted={props.audio.kind !== "original"} scale={c.scale} mirror={props.mirror} />
               </Sequence>
             </React.Fragment>
           );

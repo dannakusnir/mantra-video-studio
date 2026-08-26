@@ -632,6 +632,7 @@ export const RemotionRoot: React.FC = () => {
           lookIntensity: 1,
           sfxToggles: {},
           reduceMotion: false,
+          mirror: false,
         } as const;
         return (
           <Composition
@@ -670,6 +671,7 @@ export const RemotionRoot: React.FC = () => {
           lookIntensity: 1,
           sfxToggles: {},
           reduceMotion: false,
+          mirror: false,
         } as const;
         return (
           <Composition
@@ -718,6 +720,7 @@ export const RemotionRoot: React.FC = () => {
           lookIntensity: 1,
           sfxToggles: {},
           reduceMotion: false,
+          mirror: false,
         } as const;
         return (
           <Composition
