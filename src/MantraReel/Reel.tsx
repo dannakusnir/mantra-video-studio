@@ -28,7 +28,7 @@ import React from "react";
 import { AbsoluteFill, Audio, OffthreadVideo, Sequence, interpolate, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { z } from "zod";
 import { toCards, type Word } from "./phrase";
-import { Captions, WIDTH, SAFE, type CaptionStyle } from "./Captions";
+import { Captions, WIDTH, SAFE, posPaddingBottom, type CaptionStyle, type CaptionPos } from "./Captions";
 import { Look, type LookKey } from "./Look";
 import { PACES, PAUSE_SEC, inPointFor, type PauseKey } from "./pace";
 import { planSfx, sfxLibraryEntry, SFX_PLACEMENT_KEYS, type SfxCue, type SfxPlacementKey } from "./sfx";
@@ -197,6 +197,45 @@ const ProgressRule: React.FC = () => {
           borderRadius: 3,
           background: GLOW,
           boxShadow: `0 0 10px ${GLOW}`,
+        }}
+      />
+    </AbsoluteFill>
+  );
+};
+
+/**
+ * CAPTION SCRIM.
+ *
+ * QA (14 Sep, F5/F8) found the caption nearly unreadable over a light
+ * background -- "ה-Hug האחרון כמעט לא נראה על הבד הלבן". Captions.tsx already
+ * carries a heavy text-shadow (see SHADOW there), but a shadow alone loses to
+ * a bright, busy background. This adds one soft gradient behind the WHOLE
+ * caption band -- not a box, not a plate, both ruled out by the brief -- so
+ * contrast survives regardless of what the shot behind it is doing.
+ *
+ * It anchors on posPaddingBottom, the exact function Captions.tsx itself uses
+ * to place the caption block, so the scrim tracks whichever caption position
+ * is active ("low" or "mid") instead of assuming one. The band's height (640)
+ * is fixed rather than measured off the actual card -- generous enough to
+ * clear the tallest real card (three Minimal lines, or two Editorial/Kinetic
+ * lines, at the maximum 1.4 captionScale) with room to fade out above the
+ * text on every style.
+ */
+const CaptionScrim: React.FC<{ pos: CaptionPos }> = ({ pos }) => {
+  const { height } = useVideoConfig();
+  const anchor = height - posPaddingBottom(pos, height); // caption block's own bottom edge
+  const bandBottom = Math.min(height, anchor + 120);
+  const bandTop = Math.max(0, anchor - 640);
+  return (
+    <AbsoluteFill>
+      <div
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: bandTop,
+          height: bandBottom - bandTop,
+          background: "linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.46) 58%, rgba(0,0,0,0.6) 100%)",
         }}
       />
     </AbsoluteFill>
@@ -433,6 +472,7 @@ export const MantraReel: React.FC<MantraReelProps> = (props) => {
       ))}
 
       <ProgressRule />
+      <CaptionScrim pos={props.captionPos} />
       <Captions
         cards={cards}
         style={captions}
