@@ -221,10 +221,19 @@ export function planOf(p: MantraReelProps) {
   const outSecEff = p.trim ? p.trim.outSec : p.outSec;
   const keep = PAUSE_SEC[p.pause as PauseKey];
 
-  const tighten = keep !== null;
+  // THE PAUSE ONLY COUNTS IF IT IS INSIDE THE CUT. Danna's 14 Sep render
+  // proved the hole: her hook opened at ~9.7s, the take's one big pause sat
+  // at 1.2s -- BEFORE the in-point, already cut away -- and the arithmetic
+  // below still subtracted its 2.56s from the output. 2.3s of real cut
+  // minus 2.3s of phantom removal shipped a 0.085-second "reel" (two
+  // frames), billed and uploaded as if it were the video. A pause that is
+  // not fully inside [inAt, outSecEff] is nobody's to remove.
+  const pauseInsideCut =
+    p.pauseLengthSec > 0 && p.pauseAtSec >= inAt && p.pauseAtSec + p.pauseLengthSec <= outSecEff;
+  const tighten = keep !== null && pauseInsideCut;
   const removed = tighten ? Math.max(0, p.pauseLengthSec - keep) : 0;
   const firstSourceEnd = tighten ? p.pauseAtSec + keep : outSecEff;
-  const secondSourceStart = p.pauseAtSec + p.pauseLengthSec;
+  const secondSourceStart = tighten ? p.pauseAtSec + p.pauseLengthSec : Number.POSITIVE_INFINITY;
 
   /** Source seconds mapped onto the output timeline. */
   const remap = (s: number) => (s >= secondSourceStart ? s - inAt - removed : s - inAt);
